@@ -12,6 +12,9 @@ docs/source/api_docs
 
 # Tutorials results
 results*
+table_sea_state_power
+*.pdf
+
 
 # Jupyter notebooks
 */.ipynb_checkpoints/*

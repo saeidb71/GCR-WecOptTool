@@ -982,7 +982,7 @@ class WEC:
         results_fd = []
         results_td = []
         for idx, ires in enumerate(res):
-            ifd, itd = _postproc(ires, waves.sel(realization=idx), nsubsteps)
+            ifd, itd = _postproc(ires, waves.sel(realization=idx), nsubsteps) #_postproc(wec, ires, waves.sel(realization=idx), nsubsteps)
             results_fd.append(ifd)
             results_td.append(itd)
         return results_fd, results_td

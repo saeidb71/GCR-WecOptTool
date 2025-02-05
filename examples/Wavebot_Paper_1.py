@@ -29,10 +29,135 @@ from scipy.optimize import brute
 
 import wecopttool as wot
 
-"""## Section III: Verification
-#### WecOptTool results
-"""
 
+"""## Section 0: Beaver Island Wave Data
+"""
+from mhkit.wave.io import cdip
+import matplotlib.pyplot as plt
+station_number = "253"
+#start_date = "2020-04-01"
+#end_date = "2020-04-30"
+parameters = ["waveHs", "waveTp","waveTe"] #, "waveMeanDirection"]
+
+data = cdip.request_parse_workflow(
+    station_number=station_number,
+    parameters=parameters) #,
+    #start_date=start_date,
+    #end_date=end_date,
+#)
+print("\n")
+print(f"Returned data: {data.keys()} \n")
+data['data']['wave'].keys()
+data['data']['wave']['waveHs']
+data['data']['wave']['waveTp']
+data['data']['wave']['waveTe']
+numData=len(data['data']['wave']['waveTe'])
+Hm0=data['data']['wave']['waveHs'].values
+Te=data['data']['wave']['waveTe'].values
+
+data_wave = pd.DataFrame({
+    "Hm0": Hm0,
+    "Te": Te
+})
+
+# clusters
+N = 10
+sea_states_labels = list(string.ascii_uppercase[0:N])
+raster_order = -10
+km = KMeans(n_clusters=N, random_state=1).fit(data_wave[["Hm0", "Te"]])
+weights = [(km.labels_ == i).sum() / len(km.labels_) for i in range(N)]
+sea_states = pd.DataFrame(km.cluster_centers_, columns=["Hm0", "Te"])
+rho = 1025
+g = 9.81
+sea_states["power"] =  (rho*g**2)/(64*np.pi)*(sea_states.Hm0**2)*sea_states.Te / 1000
+sea_states["weight"] = weights
+sea_states.sort_values("Hm0", inplace=True, ascending=True)
+idx = sea_states.index
+idx = [int(np.where(idx == i)[0]) for i in np.arange(N)]
+idx = [idx[i] for i in km.labels_]
+sea_states.reset_index(drop=True, inplace=True)
+
+# representative sea state spectra (JONSWAP)
+nfreq = 127
+f1 = 0.6/nfreq #0.42/nfreq
+
+gamma = 3.3
+waves = []
+spectra = []
+fp_vec=[]
+for i, sea_state in sea_states.iterrows():
+    fp = 1 / mhkit.energy_period_to_peak_period(sea_state.Te, gamma)
+    Hm0 = sea_state.Hm0
+    spectrum = lambda f: wot.waves.jonswap_spectrum(f, fp, Hm0, gamma)
+    efth = wot.waves.omnidirectional_spectrum(f1, nfreq, spectrum, "JONSWAP")
+    wave = wot.waves.long_crested_wave(efth,nrealizations=1)
+    wave.attrs['weight'] = sea_state.weight
+    waves.append(wave)
+    spectra.append(efth)
+    fp_vec.append(fp)
+
+#Figure 5
+cmap_qualitative = cm.tab10
+fig, ax = plt.subplots(1,1, figsize=(6,6))
+ax.scatter(data_wave.Te, data_wave.Hm0, c=idx, s=40, cmap=cmap_qualitative, rasterized=True)
+ax.scatter(km.cluster_centers_[:, 1], km.cluster_centers_[:, 0], s=40, marker="x", color="w")
+for x, y, lbl in zip(sea_states["Te"], sea_states.Hm0, sea_states_labels):
+    plt.text(x+0.1, y+0.1, lbl)
+ax.set_xlabel("Energy period, T_e [s]")
+ax.set_ylabel("Significant wave height, " + "$H_{m0}$ [m]")
+ax.spines['right'].set_visible(False)
+ax.spines['top'].set_visible(False)
+plt.show(block=True)
+
+#Figure 6
+plt.figure()
+for i in range(len(waves))[::-1]:
+    wave = waves[i]
+    spectrum = spectra[i]
+    f = wave.omega/(2*np.pi)
+    plt.plot([f[0], f[-1]], [0, 0], "k-")
+    plt.plot(f, spectrum, '-', color=cmap_qualitative.colors[i], marker='.')
+    plt.gca().spines['right'].set_visible(False)
+    plt.gca().spines['top'].set_visible(False)
+    x = f[np.where(spectrum[:,0] == max(spectrum[:,0]))].values
+    y = max(spectrum.values)
+    plt.text(x, y, sea_states_labels[i])
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('Spectrum, $S$ [m$^2$/Hz]')
+    #plt.xlim([0.0, 0.3])
+    #plt.ylim([0, 100])
+plt.show(block=True)
+
+#plot wave in freq domain
+plt.figure(figsize=(10, 6))
+for i, wave in enumerate(waves):
+    wave.sel(realization=0).pipe(abs).plot(x='freq', label=f"Wave {i}", add_legend=False)
+plt.legend(title="Waves")  # Add legend to distinguish different waves
+#plt.title("All Waves on the Same Plot")
+plt.xlabel("Frequency (Hz)")  # Replace with the appropriate frequency unit
+#plt.ylabel()  # Replace with the appropriate label for the y-axis
+plt.show(block=True)
+
+#plot wave in time domain
+from wecopttool import time_results
+from xarray import DataArray
+from wecopttool import time
+t_dat = time(f1, nfreq, nsubsteps=5)
+time_vec_wave= DataArray(data=t_dat, name='time', dims='time', coords=[t_dat])
+waves_tdom = [time_results(wave, time_vec_wave) for wave in waves]
+plt.figure(figsize=(10, 6))
+for i, wave in enumerate(waves_tdom):
+    wave.sel(realization=0).plot(label=f" {sea_states_labels[i]}", add_legend=False)
+plt.legend(title="Waves",ncol=2)  # Add legend to distinguish different waves
+#plt.title("All Waves on the Same Plot")
+#plt.xlabel("Frequency (Hz)")  # Replace with the appropriate frequency unit
+plt.ylabel("Wave Amp [m]")  # Replace with the appropriate label for the y-axis
+plt.xlim([0.0, 20.0]) #limit to 50 s
+plt.show(block=True)
+
+
+"""## Section 1: Load WEC
+"""
 # Capytaine floating body
 mesh = wot.geom.WaveBot().mesh(mesh_size_factor = 0.48)
 fb = cpy.FloatingBody.from_meshio(mesh, name="WaveBot")
@@ -80,7 +205,7 @@ def pto_impedance(drivetrain_inertia=2.0, drivetrain_stiffness = 0.0):
     pto_impedance_22 = winding_impedance
     pto_impedance_mat = np.array([[pto_impedance_11, pto_impedance_12],
                               [pto_impedance_21, pto_impedance_22]])
-    return None #pto_impedance_mat
+    return pto_impedance_mat
 
 
 # regular wave
@@ -123,19 +248,19 @@ def verification(controller, scale_x_opt, nstate_opt, waves):
         fb.nb_dofs,
         np.eye(fb.nb_dofs),
         controller,
-        pto_impedance(),
+        pto_impedance(), #None
         None,
         ["PTO_Heave"],
     )
     # WEC additional forces
     wec.forces['PTO'] = pto.force_on_wec
     # objective function
-    objective = pto.average_power
+    objective = pto.average_power #pto.mechanical_average_power # pto.average_power
     # optimal controller
     results = wec.solve(waves, objective, nstate_opt, scale_x_opt=scale_x_opt)
     # post-process
-    wec_fdom, wec_tdom = wec.post_process(results[0], waves.sel(realization=0), nsubsteps=nsubsteps)
-    pto_fdom, pto_tdom = pto.post_process(wec, results[0], waves.sel(realization=0), nsubsteps=nsubsteps)
+    wec_fdom, wec_tdom = wec.post_process(wec, results, waves, nsubsteps=nsubsteps)
+    pto_fdom, pto_tdom = pto.post_process(wec, results, waves, nsubsteps=nsubsteps)
     results = {
         'results': results,
         'pto_fdom': pto_fdom,
@@ -159,22 +284,23 @@ verification_PI_regular = verification(wot.pto.controller_pi, 1e-2, 2, waves_reg
 
 """#### Theoretical results"""
 print(verification_untructured_regular['results'][0].fun) #no inpedance--> pmech= p elemc= Fe$2/(8*Real(Zi))
-print(verification_untructured_regular['pto_tdom']['power'].sel(type='mech').mean().values) #another way to cpmpute average power
+print(verification_untructured_regular['pto_tdom'][0]['power'].sel(type='mech').mean().values) #another way to cpmpute average power
 
 hydro_data=wot.add_linear_friction(bem_data=bem_data)
 #hydro_data = wot.linear_hydrodynamics(bem_data, mass, stiffness)
 Zi = wot.hydrodynamic_impedance(hydro_data).sel(influenced_dof='Heave', radiating_dof='Heave')
 
 from  utilities import calculate_power_flows
-power_flow=calculate_power_flows(verification_untructured_regular['wec'], verification_untructured_regular['pto'], verification_untructured_regular['results'][0], waves_reg.sel(realization=0), Zi)
+power_flow=calculate_power_flows(verification_untructured_regular['wec'], verification_untructured_regular['pto'], verification_untructured_regular['results'], waves_reg, Zi)
 from utilities import plot_power_flow
 plot_power_flow(power_flow)
+plt.show(block=True)
 
 
 # regular wave
 ## PTO impedance, WEC impedance, excitation forces
-Fe_reg = (verification_PI_regular['wec_fdom'].sel(type = 'Froude_Krylov').force
-          + verification_PI_regular['wec_fdom'].sel(type = 'diffraction').force
+Fe_reg = (verification_PI_regular['wec_fdom'][0].sel(type = 'Froude_Krylov').force
+          + verification_PI_regular['wec_fdom'][0].sel(type = 'diffraction').force
          ).sel(influenced_dof = 'DOF_0')
 hydro_data=wot.add_linear_friction(bem_data=bem_data)
 #hydro_data = wot.linear_hydrodynamics(bem_data, mass, stiffness)
@@ -182,8 +308,8 @@ Zi = wot.hydrodynamic_impedance(hydro_data).sel(influenced_dof='Heave', radiatin
 
 # regular wave unstructure control
 ## PTO impedance, WEC impedance, excitation forces
-Fe_reg = (verification_untructured_regular['wec_fdom'].sel(type = 'Froude_Krylov').force
-          + verification_untructured_regular['wec_fdom'].sel(type = 'diffraction').force
+Fe_reg = (verification_untructured_regular['wec_fdom'][0].sel(type = 'Froude_Krylov').force
+          + verification_untructured_regular['wec_fdom'][0].sel(type = 'diffraction').force
          ).sel(influenced_dof = 'DOF_0')
 hydro_data=wot.add_linear_friction(bem_data=bem_data)
 #hydro_data = wot.linear_hydrodynamics(bem_data, mass, stiffness)
@@ -247,8 +373,8 @@ cc_voltage_td_reg = wot.time_results(cc_voltage_fd_reg,  time_xr)
 cc_power_td_reg = cc_current_td_reg * cc_voltage_td_reg
 
 # Irregular wave
-Fe_irreg = (verification_untructured_irregular['wec_fdom'].sel(type = 'Froude_Krylov').force
-            + verification_untructured_irregular['wec_fdom'].sel(type = 'diffraction').force
+Fe_irreg = (verification_untructured_irregular['wec_fdom'][0].sel(type = 'Froude_Krylov').force
+            + verification_untructured_irregular['wec_fdom'][0].sel(type = 'diffraction').force
            ).sel(influenced_dof = 'DOF_0')
 V_th_irreg,_ =  thevenin_equivalent(Zi, pto_impedance(), Fe_irreg)
 cc_current_fd_irreg, cc_voltage_fd_irreg = complex_conjugate_solution(V_th_irreg, Z_th)
@@ -269,8 +395,8 @@ print(f'PI controller gains (WecOptTool): K = {K_wot:.1f} N/m, B  {B_wot:.1f} Ns
 t_plot = 10
 plt.figure()
 plt.plot(time, cc_power_td_reg, '-', color='0.5', linewidth=0.5, label='Theoretical optimal solution')
-plt.plot(time, verification_PI_regular['pto_tdom'].power[1], '+', label='PI controller')
-plt.plot(time, verification_untructured_regular['pto_tdom'].power[1], '--', label='Unstructured controller')
+plt.plot(time, verification_PI_regular['pto_tdom'][0].power[1], '+', label='PI controller')
+plt.plot(time, verification_untructured_regular['pto_tdom'][0].power[1], '--', label='Unstructured controller')
 plt.xlabel('Time [s]')
 plt.ylabel('Electrical power [W]')
 plt.legend(loc='upper center',)
@@ -285,7 +411,7 @@ plt.savefig('IEEE_2023_verification_epower_reg.pdf')
 plt.figure()
 plt.plot(time, cc_power_td_irreg, '-', color='0.5', linewidth=0.5, label='Theoretical optimal solution')
 plt.plot([],[])
-plt.plot(time, verification_untructured_irregular['pto_tdom'].power[1], '--', label='Unstructured controller')
+plt.plot(time, verification_untructured_irregular['pto_tdom'][0].power[1], '--', label='Unstructured controller')
 plt.xlabel('Time [s]')
 plt.ylabel('Electrical power [W]')
 plt.legend(loc='upper center',)
@@ -303,10 +429,33 @@ plt.savefig('IEEE_2023_verification_epower_irreg.pdf')
 <b>Correction:</b> In this study we did not normalize the data before using the k-means clustering. Normalizing is best practice, specially when dealing with data in different units or scales, unless a more informed distance function has been developed. Not normalizing is not "wrong" but corresponds to using a specific distance function different than the standard one with no good justification. This was a mistake. The effects of changing the distance function are not too great in this case since both sets of data have somewhat similar distributions.
 </div>
 """
+"""
+from mhkit.wave.io import cdip
+import matplotlib.pyplot as plt
+station_number = "253"
+start_date = "2020-04-01"
+end_date = "2020-04-30"
+parameters = ["waveHs", "waveTp","waveTe", "waveMeanDirection"]
 
+data = cdip.request_parse_workflow(
+    station_number=station_number,
+    parameters=parameters,
+    start_date=start_date,
+    end_date=end_date,
+)
+
+print("\n")
+print(f"Returned data: {data.keys()} \n")
+data['data']['wave'].keys()
+data['data']['wave']['waveHs']
+data['data']['wave']['waveTp']
+data['data']['wave']['waveTe']
+"""
+
+"""
 # obtain data
 parameter = "swden"
-buoy = "46050"
+buoy = "45002"#"46050"
 filenames = ndbc.available_data(parameter, buoy)
 data = ndbc.request_data(parameter, filenames["filename"])
 Hm0 = []
@@ -389,6 +538,7 @@ for i in range(len(waves))[::-1]:
     plt.ylabel('Spectrum, $S$ [m$^2$/Hz]')
     plt.xlim([0.0, 0.3])
     plt.ylim([0, 100])
+    """
 
 """#### Section IV.B: Optimal PTO for Annual Power
 <div class="alert alert-block alert-info">
@@ -396,6 +546,9 @@ for i in range(len(waves))[::-1]:
 </div>
 """
 
+# representative sea state spectra (JONSWAP)
+nfreq = 127
+f1 = 0.6/nfreq #0.42/nfreq
 # frequency vector (NEW, same as wave spectra)
 freq = wot.frequency(f1, nfreq, False)
 omega = freq * 2*np.pi

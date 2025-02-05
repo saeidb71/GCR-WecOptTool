@@ -134,8 +134,8 @@ def verification(controller, scale_x_opt, nstate_opt, waves):
     # optimal controller
     results = wec.solve(waves, objective, nstate_opt, scale_x_opt=scale_x_opt)
     # post-process
-    wec_fdom, wec_tdom = wec.post_process(results[0], waves.sel(realization=0), nsubsteps=nsubsteps)
-    pto_fdom, pto_tdom = pto.post_process(wec, results[0], waves.sel(realization=0), nsubsteps=nsubsteps)
+    wec_fdom, wec_tdom = wec.post_process(wec,results, waves, nsubsteps=nsubsteps)
+    pto_fdom, pto_tdom = pto.post_process(wec, results, waves, nsubsteps=nsubsteps)
     results = {
         'results': results,
         'pto_fdom': pto_fdom,
@@ -158,8 +158,8 @@ verification_PI_regular = verification(wot.pto.controller_pi, 1e-2, 2, waves_reg
 
 # regular wave
 ## PTO impedance, WEC impedance, excitation forces
-Fe_reg = (verification_PI_regular['wec_fdom'].sel(type = 'Froude_Krylov').force
-          + verification_PI_regular['wec_fdom'].sel(type = 'diffraction').force
+Fe_reg = (verification_PI_regular['wec_fdom'][0].sel(type = 'Froude_Krylov').force
+          + verification_PI_regular['wec_fdom'][0].sel(type = 'diffraction').force
          ).sel(influenced_dof = 'DOF_0')
 hydro_data=wot.add_linear_friction(bem_data=bem_data)
 #hydro_data = wot.linear_hydrodynamics(bem_data, mass, stiffness)
@@ -212,8 +212,8 @@ cc_voltage_td_reg = wot.time_results(cc_voltage_fd_reg,  time_xr)
 cc_power_td_reg = cc_current_td_reg * cc_voltage_td_reg
 
 # Irregular wave
-Fe_irreg = (verification_untructured_irregular['wec_fdom'].sel(type = 'Froude_Krylov').force
-            + verification_untructured_irregular['wec_fdom'].sel(type = 'diffraction').force
+Fe_irreg = (verification_untructured_irregular['wec_fdom'][0].sel(type = 'Froude_Krylov').force
+            + verification_untructured_irregular['wec_fdom'][0].sel(type = 'diffraction').force
            ).sel(influenced_dof = 'DOF_0')
 V_th_irreg,_ =  thevenin_equivalent(Zi, pto_impedance(), Fe_irreg)
 cc_current_fd_irreg, cc_voltage_fd_irreg = complex_conjugate_solution(V_th_irreg, Z_th)
@@ -234,8 +234,8 @@ print(f'PI controller gains (WecOptTool): K = {K_wot:.1f} N/m, B  {B_wot:.1f} Ns
 t_plot = 10
 plt.figure()
 plt.plot(time, cc_power_td_reg, '-', color='0.5', linewidth=0.5, label='Theoretical optimal solution')
-plt.plot(time, verification_PI_regular['pto_tdom'].power[1], '+', label='PI controller')
-plt.plot(time, verification_untructured_regular['pto_tdom'].power[1], '--', label='Unstructured controller')
+plt.plot(time, verification_PI_regular['pto_tdom'][0].power[1], '+', label='PI controller')
+plt.plot(time, verification_untructured_regular['pto_tdom'][0].power[1], '--', label='Unstructured controller')
 plt.xlabel('Time [s]')
 plt.ylabel('Electrical power [W]')
 plt.legend(loc='upper center',)
@@ -250,7 +250,7 @@ plt.savefig('IEEE_2023_verification_epower_reg.pdf')
 plt.figure()
 plt.plot(time, cc_power_td_irreg, '-', color='0.5', linewidth=0.5, label='Theoretical optimal solution')
 plt.plot([],[])
-plt.plot(time, verification_untructured_irregular['pto_tdom'].power[1], '--', label='Unstructured controller')
+plt.plot(time, verification_untructured_irregular['pto_tdom'][0].power[1], '--', label='Unstructured controller')
 plt.xlabel('Time [s]')
 plt.ylabel('Electrical power [W]')
 plt.legend(loc='upper center',)
@@ -261,6 +261,7 @@ plt.axhline(y=0, xmin = 0, xmax = 1, color = 'k', linewidth=0.5)
 
 plt.savefig('IEEE_2023_verification_epower_irreg.pdf')
 
+plt.show(block=True)
 """## Section IV: Results
 #### Section IV.A: Sea State Discretization
 
