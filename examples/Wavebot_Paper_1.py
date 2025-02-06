@@ -28,6 +28,11 @@ from datetime import datetime
 from scipy.optimize import brute
 
 import wecopttool as wot
+import os
+current_dir = os.getcwd()
+results_folder = os.path.join(current_dir, "results") # Define the path to the "results" folder
+if not os.path.exists(results_folder): # Step 3: Create the "results" folder if it doesn't exist
+    os.makedirs(results_folder)
 
 
 """## Section 0: Beaver Island Wave Data
@@ -38,7 +43,6 @@ station_number = "253"
 #start_date = "2020-04-01"
 #end_date = "2020-04-30"
 parameters = ["waveHs", "waveTp","waveTe"] #, "waveMeanDirection"]
-
 data = cdip.request_parse_workflow(
     station_number=station_number,
     parameters=parameters) #,
@@ -54,10 +58,12 @@ data['data']['wave']['waveTe']
 numData=len(data['data']['wave']['waveTe'])
 Hm0=data['data']['wave']['waveHs'].values
 Te=data['data']['wave']['waveTe'].values
+Tp=data['data']['wave']['waveTp'].values
 
 data_wave = pd.DataFrame({
     "Hm0": Hm0,
-    "Te": Te
+    "Te": Te,
+    "Tp": Tp,
 })
 
 # clusters
@@ -76,6 +82,10 @@ idx = sea_states.index
 idx = [int(np.where(idx == i)[0]) for i in np.arange(N)]
 idx = [idx[i] for i in km.labels_]
 sea_states.reset_index(drop=True, inplace=True)
+P_density_average=sum(sea_states.weight*sea_states.power)
+print(sea_states)
+print("Average annual power density [kW]:", P_density_average)  # Average annual power density
+
 
 # representative sea state spectra (JONSWAP)
 nfreq = 127
@@ -104,6 +114,15 @@ ax.scatter(km.cluster_centers_[:, 1], km.cluster_centers_[:, 0], s=40, marker="x
 for x, y, lbl in zip(sea_states["Te"], sea_states.Hm0, sea_states_labels):
     plt.text(x+0.1, y+0.1, lbl)
 ax.set_xlabel("Energy period, T_e [s]")
+ax.set_ylabel("Significant wave height, " + "$H_{m0}$ [m]")
+ax.spines['right'].set_visible(False)
+ax.spines['top'].set_visible(False)
+plt.show(block=True)
+
+fig, ax = plt.subplots(1,1, figsize=(6,6))
+#ax.scatter(1/data_wave.Te, data_wave.Hm0, c=idx, s=40, cmap=cmap_qualitative, rasterized=True)
+ax.scatter(1/data_wave.Tp, data_wave.Hm0, s=40)
+ax.set_xlabel("$f_p$ [Hz]")
 ax.set_ylabel("Significant wave height, " + "$H_{m0}$ [m]")
 ax.spines['right'].set_visible(False)
 ax.spines['top'].set_visible(False)
@@ -671,8 +690,8 @@ print(f'Optimal configuration sea state power {sea_state_power_optimal}'   )
 print(f'Nominal configuration sea state power {sea_state_power_nominal}'   )
 print(f'Optimal config % improvement  {sea_state_improvment}'   )
 
-
-fig.savefig('IEEE_2023_power_contour_PS.pdf', bbox_inches='tight')
+#fig.savefig('IEEE_2023_power_contour_PS.pdf', bbox_inches='tight')
+plt.savefig(os.path.join(results_folder, "Beaver_Island_power_contour_PS.pdf"), format='pdf', dpi=300, bbox_inches='tight')
 
 # Table II
 # save in latex format
@@ -841,7 +860,8 @@ ax[3].grid(color='0.75', linestyle='-', linewidth=0.5, axis = 'x')
 ax[3].set_xlabel('Time [s]')
 ax[3].set_xlim([0, 60])
 
-fig.savefig('IEEE_2023_timeseries_SeaState_A_effort_flow.pdf', bbox_inches='tight')
+#fig.savefig('IEEE_2023_timeseries_SeaState_A_effort_flow.pdf', bbox_inches='tight')
+plt.savefig(os.path.join(results_folder, "Beaver_Island_timeseries_SeaState_A_effort_flow.pdf"), format='pdf', dpi=300, bbox_inches='tight')
 
 """### IV.B.2: Frequency Domain Results"""
 
@@ -885,5 +905,7 @@ ax.set_ylabel('Phase [degree]')
 ax.set_xlim([0.08, 0.42])
 ax.set_ylim([-180, 180])
 
-fig.savefig('IEEE_2023_phase_matching.pdf', bbox_inches='tight')
+#fig.savefig('IEEE_2023_phase_matching.pdf', bbox_inches='tight')
+plt.savefig(os.path.join(results_folder, "Beaver_Island_phase_matching.pdf"), format='pdf', dpi=300, bbox_inches='tight')
+
 
