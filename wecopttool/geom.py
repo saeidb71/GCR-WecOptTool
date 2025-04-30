@@ -264,3 +264,32 @@ class AquaHarmonics:
             plt.show()
 
         return fig, ax
+
+if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+
+    # Instantiate the WaveBot
+    wavebot = WaveBot(r1=0.88, r2=0.35, h1=0.17, h2=0.37, scale_factor=1, freeboard=0.01)
+    print("Generating mesh for WaveBot...")
+    wavebot_mesh = wavebot.mesh(mesh_size_factor=0.1)
+    print("WaveBot mesh generated.")
+
+    # Plot WaveBot cross-section
+    print("Plotting WaveBot cross-section...")
+    fig_wavebot, ax_wavebot = wavebot.plot_cross_section(show=False)
+    ax_wavebot.set_title("WaveBot Cross-Section")
+    
+    """# Instantiate the AquaHarmonics device
+    aquaharmonics = AquaHarmonics(T1=1.5, T2=0.355, T3=7.25, r1=1.085, r2=0.405, r3=0.355,
+                                  scale_factor=1, ofst=0.1)
+    print("Generating mesh for AquaHarmonics...")
+    aquaharmonics_mesh = aquaharmonics.mesh(mesh_size_factor=0.25)
+    print("AquaHarmonics mesh generated.")
+
+    # Plot AquaHarmonics cross-section
+    print("Plotting AquaHarmonics cross-section...")
+    fig_aquaharm, ax_aquaharm = aquaharmonics.plot_cross_section(show=False)
+    ax_aquaharm.set_title("AquaHarmonics Cross-Section")"""
+
+    # Show both plots
+    plt.show()

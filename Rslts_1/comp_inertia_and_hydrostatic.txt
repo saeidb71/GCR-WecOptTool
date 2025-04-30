@@ -1,0 +1,15 @@
+--- Inertia Matrix Comparison ---
+BEM 1:
+[[874.47488312]]
+BEM 2:
+[[868.00792421]]
+Difference:
+[[-6.46695891]]
+
+--- Hydrostatic Stiffness Comparison ---
+BEM 1:
+[[24398.66971439]]
+BEM 2:
+[[24210.08178399]]
+Difference:
+[[-188.5879304]]

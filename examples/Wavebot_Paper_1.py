@@ -26,39 +26,78 @@ import string
 from sklearn.cluster import KMeans
 from datetime import datetime
 from scipy.optimize import brute
-
 import wecopttool as wot
 import os
+from netCDF4 import Dataset
+from mhkit.wave.io import cdip
+import matplotlib.pyplot as plt
+from wecopttool import time_results
+from xarray import DataArray
+from wecopttool import time
+
+
+
 current_dir = os.getcwd()
 results_folder = os.path.join(current_dir, "results") # Define the path to the "results" folder
 if not os.path.exists(results_folder): # Step 3: Create the "results" folder if it doesn't exist
     os.makedirs(results_folder)
 
+""" General Parameters"""
+gamma = 3.3 #float or int #Peak enhancement factor for JONSWAP spectrum
+rho = 1025
+g = 9.81
 
-"""## Section 0: Beaver Island Wave Data
+"""## Section 0: Wave Data
 """
-from mhkit.wave.io import cdip
-import matplotlib.pyplot as plt
-station_number = "253"
-#start_date = "2020-04-01"
-#end_date = "2020-04-30"
+#file = '253p1_historic.nc', #'139p1_historic.nc': for west oregon, Hybrid WEC IDETC paper
+file= '139p1_historic.nc'  #'269p1_historic.nc' # for below of beverisland--far form it , data_url='http://thredds.cdip.ucsd.edu/thredds/catalog/cdip/archive/253p1/253p1_historic.nc'
+#file='243p1_historic.nc' #for JP
+nc = Dataset(file, mode='r')
+print(nc.variables.keys())
+station_number ="139" #"269" # "253 or 269 " beave island, #243 JT Pier
+if station_number=="253": #data for 1 year
+    start_date = "2021-4-18" # "2021-01-01"
+    end_date =  "2021-12-11"  #"2024-01-01"
+elif station_number=="139":
+    start_date= "2005-01-01"
+    end_date =  "2025-01-01"
+elif station_number=="269":
+    start_date= "2024-05-15"
+    end_date =  "2024-11-03"
+elif station_number=="243":
+    start_date= "2022-01-1"
+    end_date =  "2023-01-1"
 parameters = ["waveHs", "waveTp","waveTe"] #, "waveMeanDirection"]
 data = cdip.request_parse_workflow(
+    nc=nc,
     station_number=station_number,
-    parameters=parameters) #,
-    #start_date=start_date,
-    #end_date=end_date,
-#)
+    parameters=parameters, #,
+    start_date=start_date,
+    end_date=end_date)
+
+
 print("\n")
-print(f"Returned data: {data.keys()} \n")
-data['data']['wave'].keys()
-data['data']['wave']['waveHs']
-data['data']['wave']['waveTp']
-data['data']['wave']['waveTe']
-numData=len(data['data']['wave']['waveTe'])
+print(f"Returned data: {data['data']['wave'].keys()} \n")
 Hm0=data['data']['wave']['waveHs'].values
-Te=data['data']['wave']['waveTe'].values
 Tp=data['data']['wave']['waveTp'].values
+if 'waveTe' not in data['data']['wave']:
+    Te = mhkit.peak_period_to_energy_period(Tp, gamma)
+    data['data']['wave']['waveTe'] = Te
+else:
+    Te=data['data']['wave']['waveTe'].values
+numData=len(Te)
+data['data']['wave']['wavePwrDnsty'] = (rho * g**2) / (64 * np.pi) * \
+    (data['data']['wave']['waveHs']**2) * data['data']['wave']['waveTe'] / 1000
+df = data['data']['wave']  # Assuming df is a Pandas DataFrame with a DateTimeIndex
+monthly_data = {} # Create a dictionary where each key is 'YYYY-MM' and each value is the subset DataFrame
+for period, group_df in df.groupby(df.index.to_period('M')):
+    # Convert the period (e.g. Period('2023-06', 'M')) to a string like '2023-06'
+    key = period.strftime('%Y-%m')
+    monthly_data[key] = group_df
+all_times = df.index # 1) Get them directly as a DatetimeIndex:
+print(all_times)
+all_times_list = df.index.tolist() # 2) Convert them to a Python list of Timestamps:
+#print(all_times_list)
 
 data_wave = pd.DataFrame({
     "Hm0": Hm0,
@@ -86,12 +125,14 @@ P_density_average=sum(sea_states.weight*sea_states.power)
 print(sea_states)
 print("Average annual power density [kW]:", P_density_average)  # Average annual power density
 
-
+sea_states.power*sea_states.weight 
+# impeortant: for the idet cpaper, we see the most impaornat powes if form this wave:
+#indx: 8  Hm0:3.954524   Te: 9.669870   power: 74.189263  weight: 0.085502
+ 
 # representative sea state spectra (JONSWAP)
 nfreq = 127
 f1 = 0.6/nfreq #0.42/nfreq
 
-gamma = 3.3
 waves = []
 spectra = []
 fp_vec=[]
@@ -106,18 +147,19 @@ for i, sea_state in sea_states.iterrows():
     spectra.append(efth)
     fp_vec.append(fp)
 
-#Figure 5
 cmap_qualitative = cm.tab10
 fig, ax = plt.subplots(1,1, figsize=(6,6))
 ax.scatter(data_wave.Te, data_wave.Hm0, c=idx, s=40, cmap=cmap_qualitative, rasterized=True)
 ax.scatter(km.cluster_centers_[:, 1], km.cluster_centers_[:, 0], s=40, marker="x", color="w")
 for x, y, lbl in zip(sea_states["Te"], sea_states.Hm0, sea_states_labels):
     plt.text(x+0.1, y+0.1, lbl)
-ax.set_xlabel("Energy period, T_e [s]")
-ax.set_ylabel("Significant wave height, " + "$H_{m0}$ [m]")
+ax.set_xlabel("$T_e$ (s)",fontsize=20)
+ax.set_ylabel("$H_{m0}$ (m) ",fontsize=20)
 ax.spines['right'].set_visible(False)
 ax.spines['top'].set_visible(False)
+plt.tight_layout()
 plt.show(block=True)
+
 
 fig, ax = plt.subplots(1,1, figsize=(6,6))
 #ax.scatter(1/data_wave.Te, data_wave.Hm0, c=idx, s=40, cmap=cmap_qualitative, rasterized=True)
@@ -158,9 +200,6 @@ plt.xlabel("Frequency (Hz)")  # Replace with the appropriate frequency unit
 plt.show(block=True)
 
 #plot wave in time domain
-from wecopttool import time_results
-from xarray import DataArray
-from wecopttool import time
 t_dat = time(f1, nfreq, nsubsteps=5)
 time_vec_wave= DataArray(data=t_dat, name='time', dims='time', coords=[t_dat])
 waves_tdom = [time_results(wave, time_vec_wave) for wave in waves]
@@ -267,7 +306,7 @@ def verification(controller, scale_x_opt, nstate_opt, waves):
         fb.nb_dofs,
         np.eye(fb.nb_dofs),
         controller,
-        pto_impedance(), #None
+        pto_impedance(), #None, #pto_impedance(), #None
         None,
         ["PTO_Heave"],
     )
@@ -296,7 +335,7 @@ print("\nUnstructured, regular wave")
 verification_untructured_regular = verification(None, 1e-2, 2*nfreq+1, waves_reg)
 
 print("\nUnstructured, irregular wave")
-verification_untructured_irregular = verification(None, 1e-2, 2*nfreq+1, waves_irreg_fdom)
+verification_untructured_irregular = verification(None, 1e-2, 2*nfreq+1, waves_irreg_fdom.sel(realization=[0]))
 
 print("\nPI, regular wave")
 verification_PI_regular = verification(wot.pto.controller_pi, 1e-2, 2, waves_reg)
@@ -588,8 +627,8 @@ wec = wot.WEC.from_bem(
 )
 
 # brute optimization parameter space
-drivetrain_stiffness_list = np.linspace(-15, 15, 7)  # default: 0.0
-drivetrain_inertia_list = np.linspace(0, 26, 14)  # default: 2.0
+drivetrain_stiffness_list =np.linspace(-15, 15, 5)# np.linspace(-15, 15, 7)  # default: 0.0
+drivetrain_inertia_list =np.linspace(0, 26, 8)# np.linspace(0, 26, 14)  # default: 2.0
 
 def list_to_range(l1):
     if len(l1) >1:

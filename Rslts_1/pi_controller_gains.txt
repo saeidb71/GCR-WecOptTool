@@ -1,0 +1,2 @@
+PI controller gains (theoretical): K = 2271.8 N/m, B = -8923.1 Ns/m
+PI controller gains (WecOptTool):   K = 5181.9 N/m, B = 1626.5 Ns/m

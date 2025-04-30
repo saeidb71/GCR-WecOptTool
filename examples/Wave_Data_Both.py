@@ -16,6 +16,11 @@ import wecopttool as wot
 from mhkit.wave.io import cdip
 import matplotlib.pyplot as plt
 import os
+import matplotlib.dates as mdates
+
+
+rho = 1025
+g = 9.81
 
 current_dir = os.getcwd()
 results_folder = os.path.join(current_dir, "results") # Define the path to the "results" folder
@@ -24,7 +29,7 @@ if not os.path.exists(results_folder): # Step 3: Create the "results" folder if 
 
 
 #------------------------------Select Buoy Number to get wave data---------------------
-station_number = "253" #"243" for Beaver Island
+"""station_number = "253" #"243" for Beaver Island
 #start_date = "2020-04-01"
 #end_date = "2020-04-30"
 parameters = ["waveHs", "waveTp","waveTe"] #, "waveMeanDirection"]
@@ -33,26 +38,111 @@ data = cdip.request_parse_workflow(
     parameters=parameters) #,
     #start_date=start_date,
     #end_date=end_date,
+#)"""
+
+
+from netCDF4 import Dataset
+file = '253p1_historic.nc'
+#file='269p1_historic.nc' # for below of beverisland--far form it
+#file='243p1_historic.nc' #for JP
+nc = Dataset(file, mode='r')
+print(nc.variables.keys())
+station_number ="253" # "253 or 269 " beave island, #243 JT Pier
+if station_number=="253": #data for 1 year
+    start_date = "2021-4-18" # "2021-01-01"
+    end_date =  "2021-12-11"  #"2024-01-01"
+elif station_number=="269":
+    start_date= "2024-05-15"
+    end_date =  "2024-11-03"
+elif station_number=="243":
+    start_date= "2022-01-1"
+    end_date =  "2023-01-1"
+parameters = ["waveHs", "waveTp","waveTe"] #, "waveMeanDirection"]
+data = cdip.request_parse_workflow(
+    nc=nc,
+    station_number=station_number,
+    parameters=parameters, #,
+    start_date=start_date,
+    end_date=end_date)
 #)
+
+
+gamma = 3.3 #float or int #Peak enhancement factor for JONSWAP spectrum
 print("\n")
 print(f"Returned data: {data['data']['wave'].keys()} \n")
 Hm0=data['data']['wave']['waveHs'].values
 Tp=data['data']['wave']['waveTp'].values
-Te=data['data']['wave']['waveTe'].values
-# Generate 2% noise
-#noise_percentage = 0.02  # 2% noise
-#noise = Tp * noise_percentage * np.random.randn(len(Tp))
-# Add noise to the original data
-#Tp = Tp + noise
-#data['data']['wave']['waveTp'] = Tp
-gamma = 3.3 #float or int #Peak enhancement factor for JONSWAP spectrum
-#Te=mhkit.peak_period_to_energy_period(Tp, gamma) # as It did not have Te, we compute it from Tp
+if 'waveTe' not in data['data']['wave']:
+    Te = mhkit.peak_period_to_energy_period(Tp, gamma)
+    data['data']['wave']['waveTe'] = Te
+else:
+    Te=data['data']['wave']['waveTe'].values
 numData=len(Te)
+gamma = 3.3 #float or int #Peak enhancement factor for JONSWAP spectrum
+
+data['data']['wave']['wavePwrDnsty'] = (rho * g**2) / (64 * np.pi) * \
+    (data['data']['wave']['waveHs']**2) * data['data']['wave']['waveTe'] / 1000
+df = data['data']['wave']  # Assuming df is a Pandas DataFrame with a DateTimeIndex
+# Create a dictionary where each key is 'YYYY-MM' and each value is the subset DataFrame
+monthly_data = {}
+for period, group_df in df.groupby(df.index.to_period('M')):
+    # Convert the period (e.g. Period('2023-06', 'M')) to a string like '2023-06'
+    key = period.strftime('%Y-%m')
+    monthly_data[key] = group_df
+
+
+all_times = df.index # 1) Get them directly as a DatetimeIndex:
+print(all_times)
+all_times_list = df.index.tolist() # 2) Convert them to a Python list of Timestamps:
+print(all_times_list)
+
+
+plt.figure(figsize=(12, 6))
+plt.plot(df.index, df['wavePwrDnsty'], linestyle='-', label='Wave Power Density')
+mean_value = df['wavePwrDnsty'].mean()
+plt.axhline(y=mean_value, color='r', linestyle='--', 
+            label=f'Mean = {mean_value:.2f} kW/m')
+plt.title("Wave Power Density vs Time")
+plt.xlabel("Time")
+plt.ylabel("Wave Power Density (kW/m)")
+# Format the x-axis to display dates nicely
+plt.gca().xaxis.set_major_locator(mdates.AutoDateLocator())
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+plt.xticks(rotation=45)
+plt.grid(True)
+plt.legend()
+# Adjust layout and save the figure with a tight bounding box using a relative path.
+plt.tight_layout()
+plt.savefig('results/wave_power_density.png', bbox_inches='tight')
+plt.show()
+
+fig, ax1 = plt.subplots(figsize=(12, 6))
+ax2 = ax1.twinx()
+line1, = ax1.plot(df.index, df['waveTe'], color='tab:blue', label='Wave Te',linewidth=1.0)
+ax1.set_ylabel(r'$T_e$', color='tab:blue')
+ax1.tick_params(axis='y', labelcolor='tab:blue')
+line2, = ax2.plot(df.index, df['waveHs'], color='tab:orange', label='Wave Hs',linewidth=1.0)
+ax2.set_ylabel(r'$H_{s}$', color='tab:orange')
+ax2.tick_params(axis='y', labelcolor='tab:orange')
+ax1.set_xlabel('Time')
+plt.title("Wave Energy Period (waveTe) and Significant Wave Height (waveHs)")
+ax1.xaxis.set_major_locator(mdates.AutoDateLocator())
+ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+plt.xticks(rotation=45)
+lines = [line1, line2]
+labels = [line.get_label() for line in lines]
+ax1.legend(lines, labels, loc='upper left')
+fig.tight_layout()
+ax1.set_ylim(0, 17)
+ax2.set_ylim(0, 9.5)
+plt.savefig('results/plot_two_yaxes.png', bbox_inches='tight')
+plt.show()
 
 data_wave = pd.DataFrame({
     "Hm0": Hm0,
     "Te": Te
 })
+
 
 # clusters
 N = 10
@@ -61,8 +151,6 @@ raster_order = -10
 km = KMeans(n_clusters=N, random_state=1).fit(data_wave[["Hm0", "Te"]])
 weights = [(km.labels_ == i).sum() / len(km.labels_) for i in range(N)]
 sea_states = pd.DataFrame(km.cluster_centers_, columns=["Hm0", "Te"])
-rho = 1025
-g = 9.81
 sea_states["power"] =  (rho*g**2)/(64*np.pi)*(sea_states.Hm0**2)*sea_states.Te / 1000 #kW/m #wave power per unit width of wave crest
 sea_states["weight"] = weights
 sea_states.sort_values("Hm0", inplace=True, ascending=True)
@@ -125,7 +213,7 @@ for i in range(len(waves))[::-1]:
     plt.xlabel('Frequency [Hz]',fontsize=17)
     plt.ylabel('Spectrum, $S$ [m$^2$/Hz]',fontsize=17)
     ax.set_title("Beaver Island Wave Distributions",fontsize=17)
-    plt.xlim([0.1, 0.5])
+    plt.xlim([0.03, 0.5])
     ax.tick_params(axis='both', which='major', labelsize=15)
     #plt.ylim([0, 100])
 plt.savefig(os.path.join(results_folder, "Beaver_Island_Wave_Dist.pdf"), format='pdf', dpi=300, bbox_inches='tight')

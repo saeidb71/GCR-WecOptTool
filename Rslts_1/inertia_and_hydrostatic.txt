@@ -1,0 +1,5 @@
+Inertia Matrix:
+[[874.47488312]]
+
+Hydrostatic Stiffness:
+[[24398.66971439]]
